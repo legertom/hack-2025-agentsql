@@ -8,15 +8,25 @@ A LangGraph-based agent that generates and refines DuckDB SQL to transform raw i
    ```bash
    uv sync
    ```
-   Create a .env file and add your OPENAI_API_KEY. Alternatively, you can use API keys from other vendors by modifying the LLM initialization.
 
-2. **Run the example script:**
+2. **Configure keys:**
+   Copy the example environment file and add your `OPENAI_API_KEY`:
+   ```bash
+   cp .env.example .env
+   # Edit .env and paste your key
+   ```
+
+3. **Run the Local Workbench:**
+   Launch the Streamlit web interface to run scenarios and view logs:
+   ```bash
+   uv run streamlit run src/agent_sql/web_app.py
+   ```
+   Access the app at `http://localhost:8501`.
+
+4. **(Optional) Run CLI example:**
    ```bash
    uv run example.py
    ```
-   This runs the agent on a CSV test scenario with files in /testdata.
-
-3. **Or run the prototype notebook for quick testing**
 
 
 ## Project Structure

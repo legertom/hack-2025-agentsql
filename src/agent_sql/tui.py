@@ -10,12 +10,22 @@ from textual.widgets import Header, Footer, Button, Static, ListView, ListItem, 
 from textual.reactive import reactive
 from textual.worker import Worker, WorkerState
 
-from agent_sql.core import ScenarioConfig, InputFile, ExpectedOutput
-from agent_sql.agent import run_sql_agent
+from dotenv import load_dotenv
 
 # Constants
 SCRIPT_DIR = Path(__file__).parent.parent.parent.absolute()
 TESTDATA_DIR = SCRIPT_DIR / "testdata"
+
+# Add src to sys.path so we can import agent_sql
+src_path = SCRIPT_DIR / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
+# Load env vars
+load_dotenv(override=True)
+
+from agent_sql.core import ScenarioConfig, InputFile, ExpectedOutput
+from agent_sql.agent import run_sql_agent
 
 class ScenarioItem(ListItem):
     """A list item representing a scenario."""
@@ -138,16 +148,29 @@ class AgentSQLApp(App):
             
         expected_path = expected_file[0]
 
-        # Find input files (exclude expected output)
+        # Find input files (exclude expected output). Support both CSV and
+        # JSON/JSONL inputs to mirror the core engine capabilities.
         inputs = []
-        for f in input_dir.glob("*.csv"):
+        for f in input_dir.iterdir():
+            if not f.is_file():
+                continue
+
             if f.name == expected_path.name:
                 continue
-                
+
+            ext = f.suffix.lower()
+            if ext == ".csv":
+                fmt = "csv"
+            elif ext in (".json", ".jsonl"):
+                fmt = "jsonl"  # handled alongside "json" in core.run_duckdb
+            else:
+                # Ignore unsupported formats for now
+                continue
+
             inputs.append(InputFile(
                 path=str(f.absolute()),
-                table_name=f.stem.replace("input_", ""), # simple heuristic
-                format="csv"
+                table_name=f.stem.replace("input_", ""),  # simple heuristic
+                format=fmt,
             ))
         
         self.current_scenario = ScenarioConfig(
