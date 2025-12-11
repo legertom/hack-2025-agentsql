@@ -1,0 +1,17 @@
+run:
+  type: docker
+env: []
+resources:
+  cpu: 0.25
+  max_mem: 0.5
+shepherds:
+- 'zeynep.tuna@clever.com'
+expose: []
+team: 'eng-district-integrations'
+pod_config:
+  group: us-west-2
+deploy_config:
+  canaryInProd: false
+  autoDeployEnvs:
+  - production
+  - clever-dev

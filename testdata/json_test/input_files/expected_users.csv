@@ -1,0 +1,4 @@
+name_clever,age_clever,height_clever,awesome_clever,bday_clever
+john doe,20,1.75,true,2003-05-15
+jane smith,19,1.65,true,2004-08-22
+invalid user,0,0.0,false,2006-01-02

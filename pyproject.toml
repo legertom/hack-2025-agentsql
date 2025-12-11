@@ -1,0 +1,19 @@
+[project]
+name = "agent-sql"
+version = "0.1.0"
+description = "Agentic SQL Transform with LangGraph"
+requires-python = ">=3.12"
+dependencies = [
+    "duckdb>=1.0.0",
+    "pandas>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "langgraph>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "openai>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+]
+

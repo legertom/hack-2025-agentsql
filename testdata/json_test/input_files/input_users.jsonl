@@ -1,0 +1,5 @@
+{ "name_raw": { "first": "john", "last": "doe" }, "age_raw": " 20", "height_raw": " 1.75", "awesome_raw": " true", "bday_raw": " 2003-05-15" }
+{ "name_raw": { "first": "jane", "last": "smith" }, "age_raw": " 19", "height_raw": " 1.65", "awesome_raw": " true", "bday_raw": " 2004-08-22" }
+{ "name_raw": { "first": "invalid", "last": "user" }, "age_raw": " abc", "height_raw": " not_a_number", "awesome_raw": " maybe", "bday_raw": " invalid_date" }
+
+
