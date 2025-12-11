@@ -79,7 +79,15 @@ _sql_prompt_builder = SQLGeneratorPromptBuilder()
 _evaluator_prompt_builder = EvaluatorPromptBuilder()
 
 # Initialize the LLM
-_llm = ChatOpenAI(model="gpt-4o", temperature=0.5)
+# Allow user to override model via environment variable (e.g. OPENAI_MODEL=gpt-5.1)
+_model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
+
+# o1 models do not support temperature
+if _model_name.startswith("o1"):
+    _llm = ChatOpenAI(model=_model_name)
+else:
+    _llm = ChatOpenAI(model=_model_name, temperature=0.5)
+
 _evaluator_llm = ChatOpenAI(model="gpt-4-turbo", temperature=0.5)
 
 
@@ -352,7 +360,7 @@ def run_sql_agent(scenario: ScenarioConfig, verbose: bool = True) -> dict:
     
     # Build and invoke the graph
     graph = build_sql_agent_graph()
-    final_state = graph.invoke(initial_state, config=config)
+    final_state = graph.invoke(initial_state, config={**config, "recursion_limit": 100})
     
     if verbose:
         logger.info(f"\n{'#'*70}")
