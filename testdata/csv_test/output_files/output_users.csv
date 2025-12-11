@@ -1,0 +1,4 @@
+name_clever,age_clever,height_clever,awesome_clever,bday_clever
+'marc', -1.91, true,197, -99
+'macgyver', 1.85, true,195, 70
+'invalid',185,this is true,abc,abc

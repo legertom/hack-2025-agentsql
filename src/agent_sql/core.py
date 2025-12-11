@@ -368,55 +368,21 @@ def run_and_compare(scenario: ScenarioConfig, sql: str) -> DiffResult:
 def extract_schema(file_path: str, file_format: str, table_name: str) -> dict:
     """
     Extract schema (column names + inferred types) from an input file.
-    Returns a dict with table_name, columns, and sample rows.
+    USES SYNTHETIC DATA GENERATION to avoid reading real values.
+    Returns a dict with table_name, columns, and sample rows (FAKE).
     """
-    con = duckdb.connect(":memory:")
-    
-    if file_format == "csv":
-        query = f"SELECT * FROM read_csv('{file_path}', header=true, all_varchar=true) LIMIT 20"
-    elif file_format in ("json", "jsonl"):
-        query = f"SELECT * FROM read_json_auto('{file_path}', records=true, sample_size=-1) LIMIT 20"
-    else:
-        raise ValueError(f"Unsupported format: {file_format}")
-    
-    df = con.execute(query).fetchdf()
-    
-    # Get column info with types
-    columns = []
-    for col in df.columns:
-        col_type = str(df[col].dtype)
-        # Infer better type description
-        if col_type == "object":
-            col_type = "VARCHAR"
-        columns.append({"name": col, "type": col_type})
-    
-    # Get sample rows (convert to list of dicts for readability)
-    sample_rows = df.head(10).to_dict(orient='records')
-    
-    con.close()
-    
-    return {
-        "table_name": table_name,
-        "columns": columns,
-        "sample_rows": sample_rows,
-        "row_count": len(df)
-    }
+    from agent_sql.synthetic import extract_schema_with_synthetic_data
+    return extract_schema_with_synthetic_data(file_path, file_format, table_name)
 
 
 def extract_expected_schema(file_path: str) -> dict:
     """
     Extract schema from expected output CSV file.
+    USES SYNTHETIC DATA GENERATION.
     """
-    df = pd.read_csv(file_path, dtype=str, nrows=20)
-    
-    columns = [{"name": col, "type": "VARCHAR"} for col in df.columns]
-    sample_rows = df.head(10).to_dict(orient='records')
-    
-    return {
-        "columns": columns,
-        "sample_rows": sample_rows,
-        "row_count": len(df)
-    }
+    from agent_sql.synthetic import extract_schema_with_synthetic_data
+    # Re-use the logic, just don't need table name in the return as much
+    return extract_schema_with_synthetic_data(file_path, "csv", "expected_output")
 
 
 def format_schema_for_prompt(schema: dict, is_input: bool = True) -> str:
@@ -431,7 +397,7 @@ def format_schema_for_prompt(schema: dict, is_input: bool = True) -> str:
     lines.append(f"Columns: {cols}")
     
     # Sample rows (limit to 5 for prompt brevity)
-    lines.append("Sample rows (first 5):")
+    lines.append("Sample rows (SYNTHETIC/FAKE DATA matching the schema patterns):")
     for i, row in enumerate(schema["sample_rows"][:5]):
         # Truncate long values
         truncated = {k: (str(v)[:50] + "..." if len(str(v)) > 50 else str(v)) for k, v in row.items()}

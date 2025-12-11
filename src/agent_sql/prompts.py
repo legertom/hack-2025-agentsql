@@ -101,6 +101,7 @@ class SQLGeneratorPromptBuilder:
             lines.append("## TASK")
             lines.append("Write a DuckDB SQL query that transforms the input table(s) to produce the expected output.")
             lines.append("Analyze the sample data carefully to understand the required transformations.")
+            lines.append("NOTE: The sample data provided is SYNTHETIC/FAKE but matches the schema patterns of the real data.")
         else:
             lines.append(f"## ITERATION {iteration} - REFINEMENT NEEDED")
             lines.append("⚠️ YOUR PREVIOUS SQL FAILED. You MUST fix it based on the analysis below.")
@@ -243,9 +244,8 @@ def format_diff_for_prompt(diff: DiffResult) -> str:
         # For execution errors, provide the error message
         return f"✗ EXECUTION ERROR:\n{diff.error}"
     
-    # For diff mismatches, provide structured feedback
-    lines = ["Your previous SQL produced WRONG results - the output from your SQL does not match the expected output. Below is the full comparison of the input, expected, and actual outputs:"]
-    lines.append("")
+    # For diff mismatches, provide structured feedback WITHOUT leaking real values
+    lines = ["Your previous SQL produced WRONG results. Below is the summary of the mismatch:"]
     lines.append("")
     
     if diff.missing_columns:
@@ -257,85 +257,68 @@ def format_diff_for_prompt(diff: DiffResult) -> str:
     if diff.row_count_expected != diff.row_count_actual:
         lines.append(f"  - Row count: expected {diff.row_count_expected}, got {diff.row_count_actual}")
     
-    # Show full tables for small datasets to give complete context
-    if diff.input_table and diff.expected_table and diff.actual_table:
-        lines.append("\n### FULL COMPARISON (input → expected vs actual):")
-        for i, (inp, exp, act) in enumerate(zip(diff.input_table, diff.expected_table, diff.actual_table)):
-            exp_norm = {k: str(v).strip() for k, v in exp.items()}
-            act_norm = {k: str(v).strip() for k, v in act.items()}
-            
-            if exp_norm != act_norm:
-                lines.append(f"\n  Row {i} MISMATCH:")
-                lines.append(f"    INPUT:    {inp}")
-                lines.append(f"    EXPECTED: {exp}")
-                lines.append(f"    ACTUAL:   {act}")
-                # Highlight specific differences
-                for col in exp:
-                    if exp_norm.get(col) != act_norm.get(col):
-                        lines.append(f"    → Column `{col}`: expected '{exp_norm.get(col)}' but got '{act_norm.get(col)}'")
-            else:
-                lines.append(f"\n  Row {i} OK: {exp}")
-    
-    elif diff.sample_mismatches:
+    if diff.sample_mismatches:
         lines.append(f"\n### VALUE MISMATCHES ({len(diff.sample_mismatches)} samples):")
-        for m in diff.sample_mismatches[:5]:
-            row_idx = m.get('row_idx', '?')
+        lines.append("Note: Actual values are hidden for privacy. Focus on the column logic.")
+        
+        # Group mismatches by column to give high-level feedback
+        mismatched_cols = {}
+        for m in diff.sample_mismatches:
             expected = m.get('expected', {})
             actual = m.get('actual', {})
-            input_row = m.get('input', {})
             
-            lines.append(f"\n  Row {row_idx}:")
-            if input_row:
-                lines.append(f"    INPUT:    {input_row}")
-            lines.append(f"    EXPECTED: {expected}")
-            lines.append(f"    ACTUAL:   {actual}")
-            
-            # Show only differing columns with clear explanation
-            diff_cols = [k for k in expected if expected.get(k) != actual.get(k)]
-            for col in diff_cols:
-                # Try to find corresponding input column
-                input_col = col.replace('_clever', '').replace('_raw', '')
-                input_val = input_row.get(input_col) or input_row.get(col) or input_row.get(input_col + '_raw')
-                if input_val:
-                    lines.append(f"    → `{col}`: input was '{input_val}' → expected '{expected.get(col)}' but got '{actual.get(col)}'")
-                else:
-                    lines.append(f"    → `{col}`: expected '{expected.get(col)}' but got '{actual.get(col)}'")
-    
-    # Add strong guidance at the end
-    lines.append("")
-    # #lines.append("=" * 60)
-    # lines.append("Your previous SQL produced WRONG results. You MUST write a DIFFERENT SQL query that fixes the issue. Make sure you look at all the values for the failing columns in the input and expected output data to understand the pattern for the expected data type and format. DO NOT output the same SQL again - it does not work!")
-    #lines.append("=" * 60)
-    
+            for col in expected:
+                if expected.get(col) != actual.get(col):
+                    if col not in mismatched_cols:
+                        mismatched_cols[col] = 0
+                    mismatched_cols[col] += 1
+        
+        for col, count in mismatched_cols.items():
+             lines.append(f"  - Column `{col}`: {count} rows had incorrect values.")
+             lines.append(f"    Check your logic for `{col}`. Ensure data types and transformations match the expected format.")
+
     return "\n".join(lines)
 
 
 def format_input_for_evaluation(scenario: ScenarioConfig) -> str:
     """
     Format input data in a way that helps the evaluator understand the exact values.
-    Shows the raw input with character-level detail for problematic rows.
+    Uses SYNTHETIC data to avoid leaking real values.
     """
-    input_df = load_input_as_df(scenario)
-    if input_df is None or len(input_df) == 0:
+    # We need to generate synthetic data here too, we can't load real input
+    # But wait, load_input_as_df in core.py loads real data.
+    # We should update load_input_as_df or just generate fresh synthetic data here.
+    # Let's generate fresh synthetic data to be safe.
+    
+    if not scenario.inputs:
         return "No input data available"
+        
+    inp = scenario.inputs[0]
+    from agent_sql.synthetic import generate_synthetic_df
+    import duckdb
+    
+    # Load real data just to analyze patterns (local only)
+    con = duckdb.connect(":memory:")
+    if inp.format == "csv":
+        query = f"SELECT * FROM read_csv('{inp.path}', header=true, all_varchar=true)"
+    else:
+        query = f"SELECT * FROM read_json_auto('{inp.path}', records=true, sample_size=-1)"
+        
+    real_df = con.execute(query).fetchdf()
+    con.close()
+    
+    # Generate synthetic
+    synthetic_df = generate_synthetic_df(real_df, n_rows=5)
     
     lines = []
-    lines.append("INPUT DATA (showing exact character content):")
+    lines.append("INPUT DATA (SYNTHETIC SAMPLES matching real patterns):")
     lines.append("")
     
-    for idx, row in input_df.iterrows():
+    for idx, row in synthetic_df.iterrows():
         lines.append(f"Row {idx}:")
-        for col in input_df.columns:
+        for col in synthetic_df.columns:
             val = str(row[col])
-            # Show the exact characters
             lines.append(f"  {col}: {repr(val)}")
-            # # Show what TRIM would produce
-            # trimmed = val.strip()
-            # if trimmed != val:
-            #     lines.append(f"    → After TRIM: {repr(trimmed)}")
-            # # Highlight if it contains quotes
-            # if '"' in trimmed or "'" in trimmed:
-            #     lines.append(f"    → ⚠️ Contains quotes!")
         lines.append("")
     
     return "\n".join(lines)
