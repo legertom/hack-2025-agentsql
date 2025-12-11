@@ -14,6 +14,9 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
+import logging
+
+logger = logging.getLogger(__name__)
 
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -112,9 +115,9 @@ def sql_generator(state: AgentState) -> dict:
     ]
     
     # Call the LLM
-    print(f"\n{'='*60}")
-    print(f"🤖 SQL Generator - Iteration {iteration}")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🤖 SQL Generator - Iteration {iteration}")
+    logger.info(f"{'='*60}")
     
     response = _llm.invoke(messages)
     raw_sql = response.content
@@ -131,7 +134,7 @@ def sql_generator(state: AgentState) -> dict:
             lines = lines[:-1]
         sql = "\n".join(lines)
     
-    print(f"Generated SQL:\n{sql[:500]}{'...' if len(sql) > 500 else ''}")
+    logger.info(f"Generated SQL:\n{sql[:500]}{'...' if len(sql) > 500 else ''}")
     
     return {
         "sql": sql,
@@ -154,9 +157,9 @@ def evaluator_node(state: AgentState) -> dict:
     if not last_diff or last_diff.ok:
         return {"evaluation": None}
     
-    print(f"\n{'='*60}")
-    print(f"🔍 Evaluator - Analyzing failure")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🔍 Evaluator - Analyzing failure")
+    logger.info(f"{'='*60}")
     
     # Build evaluator prompt
     system_prompt, user_prompt = _evaluator_prompt_builder.build_prompt(
@@ -173,7 +176,7 @@ def evaluator_node(state: AgentState) -> dict:
     evaluation = _evaluator_llm.invoke(messages)
     evaluation_text = evaluation.content
     
-    print(f"Evaluation:\n{evaluation_text[:500]}{'...' if len(evaluation_text) > 500 else ''}")
+    logger.info(f"Evaluation:\n{evaluation_text[:500]}{'...' if len(evaluation_text) > 500 else ''}")
     
     return {"evaluation": evaluation_text}
 
@@ -193,16 +196,16 @@ def duckdb_node(state: AgentState) -> dict:
     iteration = state["iteration"]
     history = state.get("history", [])
     
-    print(f"\n{'='*60}")
-    print(f"🔧 DuckDB Executor - Testing SQL")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🔧 DuckDB Executor - Testing SQL")
+    logger.info(f"{'='*60}")
     
     # Execute and compare
     diff = run_and_compare(scenario, sql)
     
     # Format for logging
     diff_summary = format_diff_for_prompt(diff)
-    print(diff_summary)
+    logger.info(diff_summary)
     
     # Create history entry
     entry = HistoryEntry(
@@ -233,25 +236,25 @@ def controller(state: AgentState) -> dict:
     iteration = state["iteration"]
     success = state.get("success", False)
     
-    print(f"\n{'='*60}")
-    print(f"🎮 Controller - Deciding next step")
-    print(f"{'='*60}")
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🎮 Controller - Deciding next step")
+    logger.info(f"{'='*60}")
     
     if success:
-        print("✓ SUCCESS! SQL matches expected output.")
+        logger.info("✓ SUCCESS! SQL matches expected output.")
         return {
             "done": True,
             "reason": "success"
         }
     
     if iteration >= scenario.max_iters:
-        print(f"✗ Max iterations ({scenario.max_iters}) reached without success.")
+        logger.info(f"✗ Max iterations ({scenario.max_iters}) reached without success.")
         return {
             "done": True,
             "reason": "max_iterations"
         }
     
-    print(f"→ Continuing to iteration {iteration} (max: {scenario.max_iters})")
+    logger.info(f"→ Continuing to iteration {iteration} (max: {scenario.max_iters})")
     return {
         "done": False
     }
@@ -342,25 +345,25 @@ def run_sql_agent(scenario: ScenarioConfig, verbose: bool = True) -> dict:
     config = {"configurable": {"thread_id": str(uuid.uuid4())}}
     
     if verbose:
-        print(f"\n{'#'*70}")
-        print(f"# Running SQL Agent on: {scenario.name}")
-        print(f"# Max iterations: {scenario.max_iters}")
-        print(f"{'#'*70}")
+        logger.info(f"\n{'#'*70}")
+        logger.info(f"# Running SQL Agent on: {scenario.name}")
+        logger.info(f"# Max iterations: {scenario.max_iters}")
+        logger.info(f"{'#'*70}")
     
     # Build and invoke the graph
     graph = build_sql_agent_graph()
     final_state = graph.invoke(initial_state, config=config)
     
     if verbose:
-        print(f"\n{'#'*70}")
-        print(f"# FINAL RESULT")
-        print(f"{'#'*70}")
-        print(f"Success: {final_state.get('success', False)}")
-        print(f"Iterations: {final_state.get('iteration', 0)}")
-        print(f"Reason: {final_state.get('reason', 'unknown')}")
+        logger.info(f"\n{'#'*70}")
+        logger.info(f"# FINAL RESULT")
+        logger.info(f"{'#'*70}")
+        logger.info(f"Success: {final_state.get('success', False)}")
+        logger.info(f"Iterations: {final_state.get('iteration', 0)}")
+        logger.info(f"Reason: {final_state.get('reason', 'unknown')}")
         
         if final_state.get("success"):
-            print(f"\n✓ Final SQL:\n{final_state.get('sql', 'N/A')}")
+            logger.info(f"\n✓ Final SQL:\n{final_state.get('sql', 'N/A')}")
     
     return final_state
 

@@ -1,4 +1,4 @@
 name_clever,age_clever,height_clever,awesome_clever,bday_clever
-'marc', -1.91, true,197, -99
-'macgyver', 1.85, true,195, 70
-'invalid',185,this is true,abc,abc
+'marc',-99,-1.91,true,1970-01-01
+'macgyver',70,1.85,true,1951-01-23
+'invalid',abc,185,this,abc11-01-23

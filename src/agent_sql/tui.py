@@ -126,22 +126,29 @@ class AgentSQLApp(App):
         """Load the configuration for a selected scenario."""
         input_dir = path / "input_files"
         
-        # Find input files
-        inputs = []
-        for f in input_dir.glob("*.csv"):
-            inputs.append(InputFile(
-                path=str(f.absolute()),
-                table_name=f.stem.replace("input_", ""), # simple heuristic
-                format="csv"
-            ))
-        
-        # Find expected output
-        expected_file = list(path.glob("expected_*.csv"))
+        # Find expected output first (it's often in input_files)
+        expected_file = list(input_dir.glob("expected_*.csv"))
+        if not expected_file:
+            # Try looking in the root of scenario dir just in case
+            expected_file = list(path.glob("expected_*.csv"))
+            
         if not expected_file:
             self.query_one("#log-view", RichLog).write(f"[red]No expected output found for {name}[/]")
             return
             
         expected_path = expected_file[0]
+
+        # Find input files (exclude expected output)
+        inputs = []
+        for f in input_dir.glob("*.csv"):
+            if f.name == expected_path.name:
+                continue
+                
+            inputs.append(InputFile(
+                path=str(f.absolute()),
+                table_name=f.stem.replace("input_", ""), # simple heuristic
+                format="csv"
+            ))
         
         self.current_scenario = ScenarioConfig(
             name=name,
@@ -183,50 +190,56 @@ class AgentSQLApp(App):
         self.run_worker(self.run_agent_thread, thread=True)
 
     def run_agent_thread(self) -> None:
-        """Run the agent (blocking) and capture output."""
-        # Capture stdout to redirect to RichLog
-        import io
-        from contextlib import redirect_stdout
+        """Run the agent (blocking) and capture output via logging."""
+        import logging
+        import traceback
         
         log_view = self.query_one("#log-view", RichLog)
         
-        class RichLogger:
-            def write(self, message):
-                if message.strip():
-                    self.app.call_from_thread(log_view.write, message.strip())
-            def flush(self):
-                pass
+        # Custom handler to write to RichLog
+        class TextualHandler(logging.Handler):
+            def __init__(self, app, log_view):
+                super().__init__()
+                self.app = app
+                self.log_view = log_view
                 
-        # We can't easily redirect stdout across threads in a way that Textual likes for updates
-        # So we'll just run it and let it print to console (which might mess up TUI) 
-        # OR we modify run_sql_agent to accept a logger.
-        # For now, let's try to capture it or just run it and show final result.
-        # Actually, run_sql_agent prints a lot. 
-        # Let's try to capture stdout in this thread and post messages to the main thread.
+            def emit(self, record):
+                msg = self.format(record)
+                self.app.call_from_thread(self.log_view.write, msg)
         
-        f = io.StringIO()
-        with redirect_stdout(f):
-            # We need to periodically flush 'f' to the UI
-            # But redirect_stdout buffers. 
-            # Let's just run it and print the final result for now to be safe, 
-            # or use a custom print function if we could inject it.
-            # Since we can't easily inject, we will just run it and show the result.
-            # Wait, we CAN capture stdout if we wrap the stream.
-            
-            result = run_sql_agent(self.current_scenario, verbose=True)
-            
-        # Get all output
-        output = f.getvalue()
-        self.app.call_from_thread(log_view.write, output)
+        # Setup logger
+        root_logger = logging.getLogger()
+        handler = TextualHandler(self.app, log_view)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.INFO)
         
-        # Update SQL view
-        if result.get("success"):
-            sql = result.get("sql", "-- No SQL generated")
-            self.app.call_from_thread(self.update_sql_view, sql)
-        else:
-            self.app.call_from_thread(self.update_sql_view, "-- Agent failed to generate correct SQL")
+        result = {}
+        
+        try:
+            # Check if we have inputs
+            if not self.current_scenario.inputs:
+                self.app.call_from_thread(log_view.write, "[red]❌ Error: No input files found for this scenario![/]")
+                result = {"success": False}
+            else:
+                result = run_sql_agent(self.current_scenario, verbose=True)
+        except Exception as e:
+            # Capture the exception
+            self.app.call_from_thread(log_view.write, f"[red]❌ Error: {str(e)}[/]")
+            self.app.call_from_thread(log_view.write, traceback.format_exc())
+            result = {"success": False}
+        finally:
+            # Cleanup handler
+            root_logger.removeHandler(handler)
             
-        self.app.call_from_thread(self.enable_button)
+            # Update SQL view
+            if result.get("success"):
+                sql = result.get("sql", "-- No SQL generated")
+                self.app.call_from_thread(self.update_sql_view, sql)
+            else:
+                self.app.call_from_thread(self.update_sql_view, "-- Agent failed or encountered an error. Check Logs tab.")
+                
+            self.app.call_from_thread(self.enable_button)
 
     def update_sql_view(self, sql: str) -> None:
         """Update the SQL view tab."""
