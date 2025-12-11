@@ -399,8 +399,14 @@ def format_schema_for_prompt(schema: dict, is_input: bool = True) -> str:
     # Sample rows (limit to 5 for prompt brevity)
     lines.append("Sample rows (SYNTHETIC/FAKE DATA matching the schema patterns):")
     for i, row in enumerate(schema["sample_rows"][:5]):
-        # Truncate long values
-        truncated = {k: (str(v)[:50] + "..." if len(str(v)) > 50 else str(v)) for k, v in row.items()}
+        # Truncate long values but keep structure
+        truncated = {}
+        for k, v in row.items():
+            if isinstance(v, (dict, list)):
+                truncated[k] = v
+            else:
+                str_v = str(v)
+                truncated[k] = str_v[:50] + "..." if len(str_v) > 50 else v
         lines.append(f"  {i+1}. {json.dumps(truncated)}")
     
     return "\n".join(lines)

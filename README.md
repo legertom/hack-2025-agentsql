@@ -16,14 +16,23 @@ A LangGraph-based agent that generates and refines DuckDB SQL to transform raw i
    # Edit .env and paste your key
    ```
 
-3. **Run the Local Workbench:**
-   Launch the Streamlit web interface to run scenarios and view logs:
+### Option 1: Web Workbench (Recommended)
+   Launch the full Streamlit web interface with persistent logs and visual diffs:
    ```bash
    uv run streamlit run src/agent_sql/web_app.py
    ```
-   Access the app at `http://localhost:8501`.
+   Access at `http://localhost:8501`.
 
-4. **(Optional) Run CLI example:**
+   *(Note: A simple prototype is also available at `uv run streamlit run app.py`)*
+
+### Option 2: Terminal Interface (TUI)
+   Run the interactive text-based UI in your terminal:
+   ```bash
+   uv run src/agent_sql/tui.py
+   ```
+
+### Option 3: CLI Example
+   Run a headless example script:
    ```bash
    uv run example.py
    ```

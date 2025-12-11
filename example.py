@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+
 # Load environment variables
 load_dotenv(override=True)
 
@@ -29,8 +34,13 @@ SCRIPT_DIR = Path(__file__).parent.absolute()
 TESTDATA_DIR = SCRIPT_DIR / "testdata"
 
 
+import argparse
+
 def main():
     """Run the agent on a test scenario."""
+    parser = argparse.ArgumentParser(description="Run SQL Agent on a test scenario")
+    parser.add_argument("--scenario", choices=["csv_test", "json_test"], default="csv_test", help="Scenario to run")
+    args = parser.parse_args()
     
     # Check for API key
     if not os.getenv("OPENAI_API_KEY"):
@@ -46,9 +56,16 @@ def main():
         print(f"   Script location: {SCRIPT_DIR}")
         return
     
-    # Create CSV test scenario
-    input_path = TESTDATA_DIR / "csv_test" / "input_files" / "input_users.csv"
-    expected_path = TESTDATA_DIR / "csv_test" / "input_files" / "expected_users.csv"
+    if args.scenario == "csv_test":
+        input_path = TESTDATA_DIR / "csv_test" / "input_files" / "input_users.csv"
+        expected_path = TESTDATA_DIR / "csv_test" / "input_files" / "expected_users.csv"
+        scenario_name = "csv_users_transform"
+        input_format = "csv"
+    else:
+        input_path = TESTDATA_DIR / "json_test" / "input_files" / "input_users.jsonl"
+        expected_path = TESTDATA_DIR / "json_test" / "input_files" / "expected_users.csv"
+        scenario_name = "json_users_transform"
+        input_format = "jsonl"
     
     # Verify files exist
     if not input_path.exists():
@@ -58,28 +75,28 @@ def main():
         print(f"❌ Error: Expected output file not found at {expected_path}")
         return
     
-    csv_scenario = ScenarioConfig(
-        name="csv_users_transform",
+    scenario = ScenarioConfig(
+        name=scenario_name,
         inputs=[
             InputFile(
                 path=str(input_path.absolute()),
-                table_name="users_raw",
-                format="csv"
+                table_name="users",
+                format=input_format
             )
         ],
         expected_output=ExpectedOutput(
             path=str(expected_path.absolute()),
             table_name="users_output"
         ),
-        max_iters=5
+        max_iters=20
     )
     
     print("=" * 70)
-    print("Running SQL Agent on CSV Scenario")
+    print(f"Running SQL Agent on {args.scenario}")
     print("=" * 70)
     
     # Run the agent
-    result = run_sql_agent(csv_scenario, verbose=True)
+    result = run_sql_agent(scenario, verbose=True)
     
     # Print final summary
     print("\n" + "=" * 70)

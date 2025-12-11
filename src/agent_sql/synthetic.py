@@ -36,12 +36,39 @@ def analyze_column(df: pd.DataFrame, col_name: str) -> Dict[str, Any]:
         stats["max"] = float(series.max()) if not series.empty else 100
         stats["is_int"] = pd.api.types.is_integer_dtype(series)
     
+    # Check for struct/dict types (usually object dtype)
+    if dtype == "object":
+        non_null = series.dropna()
+        if not non_null.empty:
+            sample = non_null.iloc[0]
+            if isinstance(sample, dict):
+                stats["semantic_type"] = "struct"
+                # Analyze nested fields
+                nested_df = pd.DataFrame(non_null.tolist())
+                stats["fields"] = {}
+                for nested_col in nested_df.columns:
+                    stats["fields"][nested_col] = analyze_column(nested_df, nested_col)
+                return stats
+
     if is_string:
         # Check for common patterns
         non_null = series.dropna().astype(str)
         if not non_null.empty:
             avg_len = non_null.str.len().mean()
             stats["avg_len"] = avg_len
+            
+            # Check if it looks like a numeric string (e.g. " 20", "1.5")
+            # Try converting to numeric, allowing for whitespace and dirty data
+            numeric_series = pd.to_numeric(non_null, errors='coerce')
+            valid_ratio = numeric_series.notna().mean()
+            
+            if valid_ratio > 0.6:  # Allow some dirty data
+                stats["semantic_type"] = "numeric_string"
+                valid_nums = numeric_series.dropna()
+                stats["min"] = float(valid_nums.min())
+                stats["max"] = float(valid_nums.max())
+                stats["is_int"] = (valid_nums % 1 == 0).all()
+                return stats
             
             # Check if it looks like an email
             if non_null.str.contains("@").mean() > 0.5:
@@ -66,8 +93,24 @@ def generate_value(stats: Dict[str, Any]) -> Any:
     if stats["has_nulls"] and random.random() < 0.1:
         return None
         
+    if stats.get("semantic_type") == "struct":
+        return {
+            field: generate_value(field_stats)
+            for field, field_stats in stats["fields"].items()
+        }
+
     if stats.get("semantic_type") == "enum":
         return random.choice(stats["values"])
+    
+    if stats.get("semantic_type") == "numeric_string":
+        min_val = stats.get("min", 0)
+        max_val = stats.get("max", 100)
+        if stats.get("is_int"):
+            val = random.randint(int(min_val), int(max_val))
+        else:
+            val = random.uniform(min_val, max_val)
+        # Add random whitespace to mimic input if needed, or just return string
+        return f" {val}" # Simple heuristic: add leading space as seen in examples
         
     if stats["is_numeric"]:
         min_val = stats.get("min", 0)
@@ -133,8 +176,25 @@ def extract_schema_with_synthetic_data(file_path: str, file_format: str, table_n
     columns = []
     for col in real_df.columns:
         col_type = str(real_df[col].dtype)
+        
+        # Improve type detection for structs
         if col_type == "object":
-            col_type = "VARCHAR"
+            # Check if it's actually a struct/dict
+            non_null = real_df[col].dropna()
+            if not non_null.empty and isinstance(non_null.iloc[0], dict):
+                # Infer struct schema from the first non-null value
+                sample = non_null.iloc[0]
+                field_types = []
+                for k, v in sample.items():
+                    v_type = "VARCHAR"
+                    if isinstance(v, int): v_type = "INTEGER"
+                    elif isinstance(v, float): v_type = "DOUBLE"
+                    elif isinstance(v, bool): v_type = "BOOLEAN"
+                    field_types.append(f"'{k}' {v_type}")
+                col_type = f"STRUCT({', '.join(field_types)})"
+            else:
+                col_type = "VARCHAR"
+                
         columns.append({"name": col, "type": col_type})
     
     # Convert synthetic data to list of dicts
